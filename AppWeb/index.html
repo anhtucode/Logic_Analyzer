@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ETVIEW Logic Analyzer</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-icon">〰</span><strong>Logic Analyzer</strong><span class="badge">Web App</span></div>
+    <div class="top-controls">
+      <button id="connectBtn" class="status-chip disconnected"><span class="status-dot"></span><span id="connectionText">Kết nối</span></button>
+      <label>Mode<select id="modeSelect"><option value="CAPTURE">Capture</option><option value="STREAM">Streaming</option></select></label>
+      <label>Sample Rate<select id="rateSelect"></select></label>
+      <label>Buffer<select disabled><option>8,192 samples</option></select></label>
+      <span class="divider"></span>
+      <button id="startBtn" class="action start">▶ Start</button>
+      <button id="stopBtn" class="action stop">■ Stop</button>
+      <button id="resetBtn" class="action neutral">↻ Reset</button>
+      <span class="divider"></span>
+      <button id="saveBtn" class="action neutral">▣ Save</button>
+      <button id="loadBtn" class="action neutral">▤ Load</button>
+      <button id="exportBtn" class="action neutral">⇧ Export</button>
+      <input id="loadInput" type="file" accept=".json" hidden>
+      <button id="themeBtn" class="icon-button" title="Đổi theme">☀</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <aside class="left-panel">
+      <details open>
+        <summary>⌁ Acquisition</summary>
+        <div class="panel-content form-grid">
+          <label>Mode</label><select id="sideModeSelect"><option value="CAPTURE">Capture</option><option value="STREAM">Streaming</option></select>
+          <label>Sample Rate</label><select id="sideRateSelect"></select>
+          <label>Memory Depth</label><select disabled><option>8,192 samples</option></select>
+          <label>Timeout</label><select id="timeoutSelect"><option value="0">∞</option><option value="500">500 ms</option><option value="1000">1 s</option><option value="2000">2 s</option><option value="5000">5 s</option></select>
+        </div>
+      </details>
+
+      <details open>
+        <summary>⌖ Trigger</summary>
+        <div class="panel-content form-grid">
+          <label>Mode</label>
+          <select id="triggerEdge">
+            <option value="2">None (thu ngay)</option>
+            <option value="0" selected>Rising Edge</option>
+            <option value="1">Falling Edge</option>
+          </select>
+          <label>Source</label><select id="triggerChannel"></select>
+          <label>Position</label><select id="pretriggerSelect"><option value="0">0%</option><option value="1">1%</option><option value="25">25%</option><option value="50" selected>50%</option><option value="75">75%</option></select>
+        </div>
+      </details>
+
+      <details open>
+        <summary>▣ Channels (8)</summary>
+        <div class="channel-columns"><span></span><span></span><span>Channel</span><span>A</span><span>B</span></div>
+        <div id="channelList" class="panel-content channel-list"></div>
+        <div class="channel-actions"><button id="allChannelsBtn">All</button><button id="noChannelsBtn">None</button></div>
+      </details>
+
+      <details open>
+        <summary>⌘ Protocols</summary>
+        <div class="panel-content protocols">
+          <label><input id="uartEnabled" type="checkbox" checked> UART <span><select id="uartChannel"></select><select id="uartBaud"><option>9600</option><option>19200</option><option>38400</option><option>57600</option><option selected>115200</option></select></span></label>
+          <label><input id="i2cEnabled" type="checkbox"> I²C <span>SCL <select id="i2cScl"></select> SDA <select id="i2cSda"></select></span></label>
+          <label><input id="spiEnabled" type="checkbox"> SPI <span>CLK <select id="spiClk"></select> MOSI <select id="spiMosi"></select></span></label>
+        </div>
+      </details>
+
+      <details open>
+        <summary>⚙ Self Test</summary>
+        <div class="panel-content">
+          <div class="form-grid">
+            <label>Protocol</label>
+            <select id="selfTestProtocol"><option value="1">UART 9600</option><option value="2">I²C 500 Hz</option><option value="3">SPI Mode 0</option></select>
+            <label>Run Mode</label>
+            <select id="selfTestRepeat"><option value="0">One Shot</option><option value="1">Repeat 50 ms</option></select>
+          </div>
+          <div id="selfTestWiring" class="self-test-wiring"></div>
+          <div class="self-test-actions"><button id="runSelfTestBtn" class="self-test-run">Run Test</button><button id="stopSelfTestBtn">Stop Test</button></div>
+          <div id="selfTestStatus" class="self-test-status">OFF</div>
+        </div>
+      </details>
+    </aside>
+
+    <section class="center-column">
+      <section class="wave-card">
+        <div class="card-header">
+          <div><strong>〽 Waveform</strong><span id="captureSummary">Chưa có dữ liệu — nhấn Start để thu tín hiệu</span></div>
+          <div class="wave-tools">
+            <button id="zoomInBtn" title="Phóng to">⌕+</button><button id="zoomOutBtn" title="Thu nhỏ">⌕−</button><button id="fitBtn" title="Hiển thị toàn bộ">⛶</button>
+            <span class="tool-separator"></span>
+            <button id="cursorBtn" class="active" title="Kéo cursor A/B">A/B</button><button id="panBtn" title="Kéo waveform theo thời gian">✥</button><button id="snapBtn" class="active" title="Tự động căn cursor vào cạnh gần nhất">⌁ Snap</button>
+            <span class="tool-separator"></span>
+            <select id="edgeNavType" title="Loại cạnh cần tìm"><option value="rising">↑ Rising</option><option value="falling">↓ Falling</option><option value="any">↕ Any</option></select>
+            <button id="prevEdgeBtn" title="Đến cạnh trước">‹</button><button id="nextEdgeBtn" title="Đến cạnh tiếp theo">›</button>
+          </div>
+        </div>
+        <div class="canvas-wrap"><canvas id="waveCanvas"></canvas><div id="canvasTooltip" class="tooltip hidden"></div></div>
+        <div class="wave-footer">
+          <button id="cursorAPill" class="cursor-pill cursor-a active" title="Chọn cursor A">A</button><span id="cursorAText">—</span>
+          <button id="cursorBPill" class="cursor-pill cursor-b" title="Chọn cursor B">B</button><span id="cursorBText">—</span>
+          <strong id="deltaText">Δt = —</strong><strong id="frequencyText">f = —</strong>
+          <span class="footer-spacer"></span><span class="trigger-key">T</span><span id="triggerTimeText">Trigger</span>
+        </div>
+      </section>
+
+      <section class="analysis-card">
+        <nav class="tabs">
+          <button class="tab active" data-tab="decoded">⌁ Decoded Data</button>
+          <button class="tab" data-tab="measurements">◉ Measurements</button>
+          <button class="tab" data-tab="protocol">⌘ Protocol Analyzer</button>
+          <button class="tab" data-tab="events">▤ Event Log</button>
+        </nav>
+        <div id="decodedTab" class="tab-panel active">
+          <div class="decoder-title"><span><b id="decodedBadge" class="protocol-tag">ALL</b> <span id="decodedTitle">Decoded Events</span></span><span id="decodedCount">0 events</span></div>
+          <div class="table-wrap"><table><thead><tr><th>#</th><th>Time</th><th>Protocol</th><th>Data</th><th>Info</th></tr></thead><tbody id="decodedTableBody"></tbody></table></div>
+        </div>
+        <div id="measurementsTab" class="tab-panel"><div class="table-wrap"><table><thead><tr><th>Channel</th><th>Frequency</th><th>Period</th><th>Duty Cycle</th><th>High</th><th>Low</th></tr></thead><tbody id="measurementsBody"></tbody></table></div></div>
+        <div id="protocolTab" class="tab-panel"><div id="protocolResults" class="empty-state">Bật decoder ở thanh bên và chạy capture để xem kết quả.</div></div>
+        <div id="eventsTab" class="tab-panel"><div class="event-toolbar"><label><input id="autoScroll" type="checkbox" checked> Auto-scroll</label><button id="clearLogBtn">Clear</button></div><div id="eventLog" class="event-log"></div></div>
+      </section>
+    </section>
+
+    <aside class="right-panel">
+      <details open><summary>⌁ Channel Information</summary><div class="panel-content info-grid">
+        <label>Selected Channel</label><select id="selectedChannel"></select><span>Type</span><b>Digital</b>
+        <span>State at A</span><b id="stateAtA">—</b><span>State at B</span><b id="stateAtB">—</b>
+        <span>Frequency</span><b id="selectedFrequency">—</b><span>Period</span><b id="selectedPeriod">—</b>
+        <span>Duty Cycle</span><b id="selectedDuty">—</b><span>High / Low</span><b id="selectedPulse">—</b>
+      </div></details>
+      <details open><summary>⊕ Cursor Measurements</summary><div class="panel-content info-grid">
+        <span>Cursor A</span><b id="rightCursorA">—</b><span>Cursor B</span><b id="rightCursorB">—</b>
+        <span>Δt (B − A)</span><b id="rightDelta">—</b><span>1 / Δt</span><b id="rightDeltaFrequency">—</b>
+      </div></details>
+      <details open><summary>▥ Statistics</summary><div class="panel-content info-grid">
+        <span>Capture Length</span><b id="captureLength">—</b><span>Total Samples</span><b id="totalSamples">—</b>
+        <span>Sample Rate</span><b id="statSampleRate">—</b><span>Active Channels</span><b id="activeChannels">8 / 8</b>
+        <span>Data Size</span><b id="dataSize">—</b>
+      </div></details>
+      <details open><summary>⌾ Trigger Summary</summary><div class="panel-content info-grid">
+        <span>Mode</span><b id="triggerMode">Rising Edge</b><span>Source</span><b id="triggerSource">D0</b>
+        <span>Trigger Time</span><b id="triggerTime">—</b><span>Position</span><b id="triggerPosition">50%</b>
+      </div></details>
+    </aside>
+  </main>
+
+  <footer class="statusbar"><span id="footerStatus">Chưa kết nối — hãy kết nối STM32 USB CDC</span><span id="footerPointer">x: — · channel: —</span></footer>
+  <script src="app.js"></script>
+</body>
+</html>
