@@ -415,9 +415,9 @@
               <FilePath>../Core/Src/self_test.c</FilePath>
             </File>
             <File>
-              <FileName>display_control.c</FileName>
+              <FileName>lcd_mode.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Core/Src/display_control.c</FilePath>
+              <FilePath>../Core/Src/lcd_mode.c</FilePath>
             </File>
             <File>
               <FileName>stm32f1xx_it.c</FileName>

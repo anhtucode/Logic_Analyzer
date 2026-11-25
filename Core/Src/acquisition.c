@@ -1,13 +1,22 @@
 #include "acquisition.h"
 #include <string.h>
 
-#define LA_FLAG_OVERRUN  0x0001U
-#define LA_FLAG_DMA      0x0002U
-
 static TIM_HandleTypeDef *la_timer;
 static DMA_HandleTypeDef *la_dma;
 static uint8_t dma_buffer[LA_DMA_SAMPLES];
-static uint8_t capture_buffer[LA_MAX_SAMPLES];
+/* Capture, PC stream queue va LCD loai tru nhau: dung chung 8 KiB. */
+static union
+{
+  uint8_t capture[LA_MAX_SAMPLES];
+  uint8_t stream_queue[LA_STREAM_QUEUE_BLOCKS][LA_STREAM_BLOCK_SAMPLES];
+  LCD_Stream lcd;
+} workspace;
+#define capture_buffer workspace.capture
+typedef char LcdWorkspaceMustFit[(sizeof(LCD_Stream) <= LA_MAX_SAMPLES) ? 1 : -1];
+typedef char StreamQueueMustFit[
+  (LA_STREAM_QUEUE_BLOCKS * LA_STREAM_BLOCK_SAMPLES <= LA_MAX_SAMPLES &&
+   (LA_STREAM_QUEUE_BLOCKS & (LA_STREAM_QUEUE_BLOCKS - 1U)) == 0U) ? 1 : -1];
+static bool lcd_session;
 
 static LA_Config config;
 static LA_Status status;
@@ -25,11 +34,9 @@ static uint8_t previous_sample;
 static bool previous_valid;
 static uint32_t start_tick;
 
-static bool stream_pending;
-static uint8_t stream_half;
+static uint32_t stream_queue_write;
+static uint32_t stream_queue_read;
 static uint32_t stream_id;
-static uint32_t stream_first_sample;
-static uint32_t next_stream_sample;
 
 static bool RateIsValid(uint32_t rate)
 {
@@ -56,9 +63,9 @@ static bool ConfigIsValid(const LA_Config *candidate)
     return false;
   }
 
-  /* USB Full Speed truyen 1 byte/mau: chi stream lien tuc toi da 10 kSa/s. */
+  /* PC stream toi 500 kSa/s; toc do cao can stress test USB/PC thuc te. */
   if ((candidate->mode == LA_MODE_STREAM) &&
-      (candidate->requested_rate_hz > 10000U))
+      (candidate->requested_rate_hz > 500000U))
   {
     return false;
   }
@@ -229,21 +236,64 @@ static void ProcessSnapshotBlock(const uint8_t *samples)
 
 static void ProcessStreamBlock(uint8_t half)
 {
-  /* Chi cho phep mot block dang cho PC; block moi den som la mat du lieu. */
-  if (stream_pending)
+  if (lcd_session)
   {
-    status.flags |= LA_FLAG_OVERRUN;
+    uint32_t before = produced_blocks;
+    bool complete = false;
+    if (before == processed_blocks)
+      complete = LCD_RecordAppend(&workspace.lcd,
+                       &dma_buffer[(uint16_t)half * LA_STREAM_BLOCK_SAMPLES],
+                       LA_STREAM_BLOCK_SAMPLES);
+    /* Half tiep theo hoan tat nghia la DMA bat dau ghi de block vua doc. */
+    if ((before != processed_blocks) || (produced_blocks != before))
+    {
+      workspace.lcd.recorded_samples = 0U;
+      status.flags |= LA_FLAG_OVERRUN | LA_FLAG_DMA_LATE;
+      status.error = LA_ERROR_OVERRUN;
+      status.dropped_blocks++;
+      status.state = LA_STATE_ERROR;
+      StopDma();
+    }
+    else if (complete)
+    {
+      StopDma();
+      status.valid_samples = LCD_RECORD_SAMPLES;
+      status.capture_id++;
+      status.state = LA_STATE_COMPLETE;
+    }
+    return;
+  }
+  /* CPU so huu queue, DMA chi ghi staging buffer. Cong bo block sau khi copy
+     xong va van chua bi DMA quay lai ghi de. Queue dung chung RAM capture. */
+  {
+    uint16_t reason = LA_FLAG_DMA_LATE;
+    uint32_t before = produced_blocks;
+    uint32_t remaining = __HAL_DMA_GET_COUNTER(la_dma);
+    bool safe_half = half == 0U ?
+                     (remaining > 0U && remaining <= LA_STREAM_BLOCK_SAMPLES) :
+                     (remaining > LA_STREAM_BLOCK_SAMPLES && remaining <= LA_DMA_SAMPLES);
+    if (before != processed_blocks || !safe_half) goto stream_overrun;
+    if (stream_queue_write - stream_queue_read >= LA_STREAM_QUEUE_BLOCKS)
+    {
+      reason = LA_FLAG_QUEUE_FULL;
+      goto stream_overrun;
+    }
+    memcpy(workspace.stream_queue[stream_queue_write & (LA_STREAM_QUEUE_BLOCKS - 1U)],
+           &dma_buffer[(uint16_t)half * LA_STREAM_BLOCK_SAMPLES], LA_STREAM_BLOCK_SAMPLES);
+    remaining = __HAL_DMA_GET_COUNTER(la_dma);
+    safe_half = half == 0U ?
+                (remaining > 0U && remaining <= LA_STREAM_BLOCK_SAMPLES) :
+                (remaining > LA_STREAM_BLOCK_SAMPLES && remaining <= LA_DMA_SAMPLES);
+    if (produced_blocks != before || !safe_half) goto stream_overrun;
+    stream_queue_write++;
+    return;
+stream_overrun:
+    status.flags |= LA_FLAG_OVERRUN | reason;
     status.error = LA_ERROR_OVERRUN;
     status.dropped_blocks++;
     status.state = LA_STATE_ERROR;
     StopDma();
-    return;
   }
-
-  stream_half = half;
-  stream_first_sample = next_stream_sample;
-  next_stream_sample += LA_STREAM_BLOCK_SAMPLES;
-  stream_pending = true;
 }
 
 void LA_Init(TIM_HandleTypeDef *timer, DMA_HandleTypeDef *dma)
@@ -279,6 +329,7 @@ bool LA_SetConfig(const LA_Config *new_config)
   }
 
   config = *new_config;
+  lcd_session = false;
   config.actual_rate_hz = ConfigureTimer(config.requested_rate_hz);
   status.actual_rate_hz = config.actual_rate_hz;
   status.error = LA_ERROR_NONE;
@@ -323,8 +374,7 @@ bool LA_Start(void)
   stored_samples = 0U;
   capture_start = 0U;
   previous_valid = false;
-  stream_pending = false;
-  next_stream_sample = 0U;
+  stream_queue_write = stream_queue_read = 0U;
   status.valid_samples = 0U;
   status.trigger_index = 0U;
   status.flags = 0U;
@@ -354,10 +404,30 @@ bool LA_Start(void)
   return true;
 }
 
+LCD_Stream *LA_LcdWorkspace(void)
+{
+  return &workspace.lcd;
+}
+
+bool LA_StartLcdPlayback(void)
+{
+  LA_Stop();
+  lcd_session = true;
+  config.mode = LA_MODE_STREAM;
+  config.trigger = LA_TRIGGER_NONE;
+  config.pretrigger_percent = 0U;
+  config.timeout_ms = 0U;
+  config.sample_depth = LCD_RECORD_SAMPLES;
+  config.requested_rate_hz = 500000U;
+  config.actual_rate_hz = ConfigureTimer(500000U);
+  status.actual_rate_hz = config.actual_rate_hz;
+  return LA_Start();
+}
+
 void LA_Stop(void)
 {
   StopDma();
-  stream_pending = false;
+  stream_queue_write = stream_queue_read = 0U;
   status.state = LA_STATE_IDLE;
   status.error = LA_ERROR_NONE;
 }
@@ -366,6 +436,9 @@ void LA_Task(void)
 {
   uint32_t available;
   uint32_t completed_at_entry;
+
+  /* Sau Stop khong xu ly backlog cua phien cu; Start se reset cac counter. */
+  if (!dma_running) return;
 
   if (dma_failed)
   {
@@ -387,7 +460,7 @@ void LA_Task(void)
   /* Hai nua DMA: ton dong 2 block nghia la nua cu dang bi DMA ghi de. */
   if (available > 1U)
   {
-    status.flags |= LA_FLAG_OVERRUN;
+    status.flags |= LA_FLAG_OVERRUN | LA_FLAG_DMA_LATE;
     status.error = LA_ERROR_OVERRUN;
     status.dropped_blocks += available - 1U;
     status.state = LA_STATE_ERROR;
@@ -424,7 +497,7 @@ uint16_t LA_ReadSamples(uint16_t offset, uint8_t *destination, uint16_t count)
 {
   uint16_t copied = 0U;
 
-  if ((destination == NULL) || (status.state != LA_STATE_COMPLETE) ||
+  if (lcd_session || (destination == NULL) || (status.state != LA_STATE_COMPLETE) ||
       (offset >= status.valid_samples))
   {
     return 0U;
@@ -444,19 +517,19 @@ uint16_t LA_ReadSamples(uint16_t offset, uint8_t *destination, uint16_t count)
 
 bool LA_GetStreamBlock(LA_StreamBlock *block)
 {
-  if ((block == NULL) || !stream_pending ||
+  if ((block == NULL) || lcd_session || (stream_queue_write == stream_queue_read) ||
       (status.state != LA_STATE_STREAMING))
   {
     return false;
   }
-  block->samples = &dma_buffer[(uint16_t)stream_half * LA_STREAM_BLOCK_SAMPLES];
+  block->samples = workspace.stream_queue[stream_queue_read & (LA_STREAM_QUEUE_BLOCKS - 1U)];
   block->count = LA_STREAM_BLOCK_SAMPLES;
   block->stream_id = stream_id;
-  block->first_sample = stream_first_sample;
+  block->first_sample = stream_queue_read * LA_STREAM_BLOCK_SAMPLES;
   return true;
 }
 
 void LA_ConsumeStreamBlock(void)
 {
-  stream_pending = false;
+  if (stream_queue_write != stream_queue_read) stream_queue_read++;
 }

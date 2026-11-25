@@ -195,7 +195,7 @@ void SysTick_Handler(void)
   HAL_IncTick();
   /* USER CODE BEGIN SysTick_IRQn 1 */
 
-  SelfTest_Tick1ms();
+  if (!AppMode_IsLcd()) SelfTest_Tick1ms();
 
   if (++test_signal_half_period_ms >= 5U)
   {

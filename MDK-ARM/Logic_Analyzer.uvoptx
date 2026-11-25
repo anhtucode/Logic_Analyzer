@@ -262,8 +262,8 @@
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
       <bDave2>0</bDave2>
-      <PathWithFileName>../Core/Src/display_control.c</PathWithFileName>
-      <FilenameWithoutPath>display_control.c</FilenameWithoutPath>
+      <PathWithFileName>../Core/Src/lcd_mode.c</PathWithFileName>
+      <FilenameWithoutPath>lcd_mode.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>

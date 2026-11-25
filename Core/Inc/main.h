@@ -31,7 +31,7 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
@@ -53,6 +53,10 @@ extern "C" {
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
+
+/* PB5: HIGH/ho = PC, LOW/GND = LCD. Doc on dinh 20 ms khi boot. */
+void AppMode_Init(void);
+bool AppMode_IsLcd(void);
 
 void PC_USB_Receive(const uint8_t *data, uint16_t length);
 

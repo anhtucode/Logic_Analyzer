@@ -4,7 +4,7 @@
 "logic_analyzer\acquisition.o"
 "logic_analyzer\pc_interface.o"
 "logic_analyzer\self_test.o"
-"logic_analyzer\display_control.o"
+"logic_analyzer\lcd_mode.o"
 "logic_analyzer\stm32f1xx_it.o"
 "logic_analyzer\stm32f1xx_hal_msp.o"
 "logic_analyzer\stm32f1xx_hal_gpio_ex.o"

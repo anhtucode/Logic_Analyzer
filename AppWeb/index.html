@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ETVIEW Logic Analyzer</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=2.0-workbench">
 </head>
 <body>
   <header class="topbar">
@@ -13,8 +13,8 @@
       <button id="connectBtn" class="status-chip disconnected"><span class="status-dot"></span><span id="connectionText">Kết nối</span></button>
       <label>Mode<select id="modeSelect"><option value="CAPTURE">Capture</option><option value="STREAM">Streaming</option></select></label>
       <label>Sample Rate<select id="rateSelect"></select></label>
-      <label>Buffer<select disabled><option>8,192 samples</option></select></label>
-      <span class="divider"></span>
+      <label>Depth<select id="depthSelect"><option value="1024">1,024</option><option value="2048">2,048</option><option value="4096">4,096</option><option value="8192" selected>8,192</option></select></label>
+      <output id="plannedDuration" title="Capture duration / PC streaming history span">—</output><span class="divider"></span>
       <button id="startBtn" class="action start">▶ Start</button>
       <button id="stopBtn" class="action stop">■ Stop</button>
       <button id="resetBtn" class="action neutral">↻ Reset</button>
@@ -29,16 +29,6 @@
 
   <main class="workspace">
     <aside class="left-panel">
-      <details open>
-        <summary>⌁ Acquisition</summary>
-        <div class="panel-content form-grid">
-          <label>Mode</label><select id="sideModeSelect"><option value="CAPTURE">Capture</option><option value="STREAM">Streaming</option></select>
-          <label>Sample Rate</label><select id="sideRateSelect"></select>
-          <label>Memory Depth</label><select disabled><option>8,192 samples</option></select>
-          <label>Timeout</label><select id="timeoutSelect"><option value="0">∞</option><option value="500">500 ms</option><option value="1000">1 s</option><option value="2000">2 s</option><option value="5000">5 s</option></select>
-        </div>
-      </details>
-
       <details open>
         <summary>⌖ Trigger</summary>
         <div class="panel-content form-grid">
@@ -63,13 +53,40 @@
       <details open>
         <summary>⌘ Protocols</summary>
         <div class="panel-content protocols">
-          <label><input id="uartEnabled" type="checkbox" checked> UART <span><select id="uartChannel"></select><select id="uartBaud"><option>9600</option><option>19200</option><option>38400</option><option>57600</option><option selected>115200</option></select></span></label>
-          <label><input id="i2cEnabled" type="checkbox"> I²C <span>SCL <select id="i2cScl"></select> SDA <select id="i2cSda"></select></span></label>
-          <label><input id="spiEnabled" type="checkbox"> SPI <span>CLK <select id="spiClk"></select> MOSI <select id="spiMosi"></select></span></label>
+          <section class="protocol-config" aria-label="UART decoder">
+            <label class="protocol-heading" for="uartEnabled"><input id="uartEnabled" type="checkbox" checked> UART</label>
+            <div class="protocol-fields">
+              <label for="uartChannel">RX</label><select id="uartChannel"></select>
+              <label for="uartBaud">Baud</label><select id="uartBaud"><option>9600</option><option>19200</option><option>38400</option><option>57600</option><option selected>115200</option></select>
+            </div>
+            <details class="protocol-advanced"><summary>UART format / TX</summary><div class="protocol-fields"><label for="uartTxChannel">TX (optional)</label><select id="uartTxChannel"></select><label for="uartDataBits">Data bits</label><select id="uartDataBits"><option>5</option><option>6</option><option>7</option><option selected>8</option><option>9</option></select><label for="uartParity">Parity</label><select id="uartParity"><option value="none">None</option><option value="even">Even</option><option value="odd">Odd</option></select><label for="uartStopBits">Stop bits</label><select id="uartStopBits"><option selected>1</option><option>1.5</option><option>2</option></select><label for="uartBitOrder">Bit order</label><select id="uartBitOrder"><option value="lsb">LSB first</option><option value="msb">MSB first</option></select></div></details>
+            <p id="uartDecodeStatus" class="decoder-status" role="status" aria-live="polite"></p>
+          </section>
+          <section class="protocol-config" aria-label="I2C decoder">
+            <label class="protocol-heading" for="i2cEnabled"><input id="i2cEnabled" type="checkbox"> I²C</label>
+            <div class="protocol-fields">
+              <label for="i2cScl">SCL</label><select id="i2cScl"></select>
+              <label for="i2cSda">SDA</label><select id="i2cSda"></select>
+            </div>
+            <p class="protocol-hint">7-bit address · ACK/NACK</p>
+            <p id="i2cDecodeStatus" class="decoder-status" role="status" aria-live="polite"></p>
+          </section>
+          <section class="protocol-config" aria-label="SPI decoder">
+            <label class="protocol-heading" for="spiEnabled"><input id="spiEnabled" type="checkbox"> SPI</label>
+            <div class="protocol-fields">
+              <label for="spiCs">CS</label><select id="spiCs"></select>
+              <label for="spiClk">SCK</label><select id="spiClk"></select>
+              <label for="spiMosi">MOSI</label><select id="spiMosi"></select>
+              <label for="spiMiso">MISO</label><select id="spiMiso"></select>
+              <label for="spiMode">Mode</label><select id="spiMode"><option value="0">Mode 0</option><option value="1">Mode 1</option><option value="2">Mode 2</option><option value="3">Mode 3</option></select>
+            </div>
+            <details class="protocol-advanced"><summary>Word format / CS polarity</summary><div class="protocol-fields"><label for="spiWordSize">Word bits</label><input id="spiWordSize" type="number" min="1" max="32" value="8"><label for="spiBitOrder">Bit order</label><select id="spiBitOrder"><option value="msb">MSB first</option><option value="lsb">LSB first</option></select><label for="spiCsActive">CS active</label><select id="spiCsActive"><option value="0">LOW</option><option value="1">HIGH</option></select></div></details><p class="protocol-hint">4 physical channels · <span id="spiModeHint">SCK nghỉ LOW · đọc cạnh lên ↑</span></p>
+            <p id="spiDecodeStatus" class="decoder-status" role="status" aria-live="polite"></p>
+          </section>
         </div>
       </details>
 
-      <details open>
+      <details>
         <summary>⚙ Self Test</summary>
         <div class="panel-content">
           <div class="form-grid">
@@ -83,22 +100,23 @@
           <div id="selfTestStatus" class="self-test-status">OFF</div>
         </div>
       </details>
-    </aside>
+      <details><summary>⚙ Advanced acquisition</summary><div class="panel-content form-grid"><label for="timeoutSelect">Trigger timeout</label><select id="timeoutSelect"><option value="0">∞</option><option value="500">500 ms</option><option value="1000">1 s</option><option value="5000">5 s</option></select><label for="pcBufferSelect">PC history</label><select id="pcBufferSelect"><option value="8192">8 Ki samples</option><option value="65536" selected>64 Ki samples</option><option value="262144">256 Ki samples</option><option value="1048576">1 Mi samples</option></select></div><p class="panel-content protocol-hint">PC history is separate from MCU capture depth. Stream: no trigger.</p></details>
+    </aside><div id="leftResizer" class="resizer vertical" role="separator" aria-label="Resize settings"></div>
 
     <section class="center-column">
       <section class="wave-card">
         <div class="card-header">
           <div><strong>〽 Waveform</strong><span id="captureSummary">Chưa có dữ liệu — nhấn Start để thu tín hiệu</span></div>
           <div class="wave-tools">
-            <button id="zoomInBtn" title="Phóng to">⌕+</button><button id="zoomOutBtn" title="Thu nhỏ">⌕−</button><button id="fitBtn" title="Hiển thị toàn bộ">⛶</button>
+            <details class="tool-menu"><summary title="Ẩn, hiện và mở rộng các panel">Layout</summary><div><button id="toggleLeft" title="Ẩn/hiện cấu hình">☰</button><button id="toggleRight" title="Ẩn/hiện thông tin">ⓘ</button><button id="toggleBottom" title="Ẩn/hiện kết quả">▤</button><button id="expandWave" title="Mở rộng waveform">⛶+</button></div></details><button id="zoomInBtn" title="Phóng to">⌕+</button><button id="zoomOutBtn" title="Thu nhỏ">⌕−</button><button id="fitBtn" title="Hiển thị toàn bộ">⛶</button>
             <span class="tool-separator"></span>
-            <button id="cursorBtn" class="active" title="Kéo cursor A/B">A/B</button><button id="panBtn" title="Kéo waveform theo thời gian">✥</button><button id="snapBtn" class="active" title="Tự động căn cursor vào cạnh gần nhất">⌁ Snap</button>
+            <button id="cursorBtn" class="active" title="Kéo cursor A/B">A/B</button><button id="panBtn" title="Kéo waveform theo thời gian">✥</button><button id="selectBtn" title="Chọn vùng thời gian">▧</button><button id="zoomSelection" title="Zoom vùng đã chọn">▧+</button><button id="snapBtn" class="active" title="Tự động căn cursor vào cạnh gần nhất">⌁ Snap</button>
             <span class="tool-separator"></span>
-            <select id="edgeNavType" title="Loại cạnh cần tìm"><option value="rising">↑ Rising</option><option value="falling">↓ Falling</option><option value="any">↕ Any</option></select>
-            <button id="prevEdgeBtn" title="Đến cạnh trước">‹</button><button id="nextEdgeBtn" title="Đến cạnh tiếp theo">›</button>
+            <details class="tool-menu"><summary title="Tìm cạnh trên kênh đã chọn">Edges</summary><div><select id="edgeNavType" title="Loại cạnh cần tìm"><option value="rising">↑ Rising</option><option value="falling">↓ Falling</option><option value="any">↕ Any</option></select>
+            <button id="prevEdgeBtn" title="Đến cạnh trước">‹</button><button id="nextEdgeBtn" title="Đến cạnh tiếp theo">›</button></div></details>
           </div>
         </div>
-        <div class="canvas-wrap"><canvas id="waveCanvas"></canvas><div id="canvasTooltip" class="tooltip hidden"></div></div>
+        <div class="timeline-tools"><span id="viewState">Snapshot</span><label title="Đo xung dưới con trỏ"><input id="autoMeasure" type="checkbox" checked> Auto measure</label><button id="followBtn" class="active">● Follow Live</button><button id="liveBtn">Go Live</button><button id="gotoTrigger">Go T</button><button id="gotoA">Go A</button><button id="gotoB">Go B</button></div><canvas id="timeCanvas" aria-label="Time ruler"></canvas><div class="wave-scroll"><div class="canvas-wrap"><canvas id="waveCanvas"></canvas><div id="canvasTooltip" class="tooltip hidden"></div></div></div><canvas id="overviewCanvas" aria-label="Overview and viewport"></canvas>
         <div class="wave-footer">
           <button id="cursorAPill" class="cursor-pill cursor-a active" title="Chọn cursor A">A</button><span id="cursorAText">—</span>
           <button id="cursorBPill" class="cursor-pill cursor-b" title="Chọn cursor B">B</button><span id="cursorBText">—</span>
@@ -107,20 +125,18 @@
         </div>
       </section>
 
-      <section class="analysis-card">
+      <div id="bottomResizer" class="resizer horizontal" role="separator" aria-label="Resize results"></div><section class="analysis-card">
         <nav class="tabs">
           <button class="tab active" data-tab="decoded">⌁ Decoded Data</button>
           <button class="tab" data-tab="measurements">◉ Measurements</button>
-          <button class="tab" data-tab="protocol">⌘ Protocol Analyzer</button>
           <button class="tab" data-tab="events">▤ Event Log</button>
         </nav>
         <div id="decodedTab" class="tab-panel active">
-          <div class="decoder-title"><span><b id="decodedBadge" class="protocol-tag">ALL</b> <span id="decodedTitle">Decoded Events</span></span><span id="decodedCount">0 events</span></div>
-          <div class="table-wrap"><table><thead><tr><th>#</th><th>Time</th><th>Protocol</th><th>Data</th><th>Info</th></tr></thead><tbody id="decodedTableBody"></tbody></table></div>
+          <div class="decoded-toolbar"><select id="decodeFormat" aria-label="Decoded value format"><option value="hex">HEX + ASCII</option><option value="decimal">Decimal</option><option value="binary">Binary</option><option value="ascii">ASCII</option></select><select id="decodeFilter" aria-label="Protocol"><option value="ALL">All protocols</option><option>UART</option><option value="I2C">I²C</option><option>SPI</option></select><select id="decodeView" aria-label="View"><option value="data">Data</option><option value="frames">Frames / errors</option><option value="transactions">Transactions</option></select><details class="tool-menu"><summary>Filters</summary><div><select id="decodeChannelFilter" aria-label="Filter channel"></select><select id="decodeStatusFilter" aria-label="Filter status"><option value="ALL">All statuses</option><option>OK</option><option>OPEN</option><option>UNSYNC</option><option>INCOMPLETE</option><option>ERROR</option><option>UNSUPPORTED</option></select><button id="clearDecodeFilters">Clear filters</button></div></details><input id="decodeSearch" type="search" placeholder="Search hex, text, status…" aria-label="Search decoded events"><select id="decodeSort" aria-label="Sort"><option value="ascending">Time ↑</option><option value="descending">Time ↓</option></select><label><input id="decodeFollow" type="checkbox">Follow rows</label><button id="copyDecoded">Copy</button><button id="exportDecoded">CSV</button><span id="decodedCount">0 events</span></div>
+          <div id="decodedScroll" class="table-wrap"><table><thead><tr><th>Start</th><th>End</th><th>Duration</th><th>Protocol</th><th>Channel</th><th>Type</th><th>Data</th><th>Status</th></tr></thead><tbody id="decodedTableBody"></tbody></table></div><div id="eventDetails" class="event-details">Chọn một sự kiện ở bảng hoặc decoder lane.</div>
         </div>
-        <div id="measurementsTab" class="tab-panel"><div class="table-wrap"><table><thead><tr><th>Channel</th><th>Frequency</th><th>Period</th><th>Duty Cycle</th><th>High</th><th>Low</th></tr></thead><tbody id="measurementsBody"></tbody></table></div></div>
-        <div id="protocolTab" class="tab-panel"><div id="protocolResults" class="empty-state">Bật decoder ở thanh bên và chạy capture để xem kết quả.</div></div>
-        <div id="eventsTab" class="tab-panel"><div class="event-toolbar"><label><input id="autoScroll" type="checkbox" checked> Auto-scroll</label><button id="clearLogBtn">Clear</button></div><div id="eventLog" class="event-log"></div></div>
+        <div id="measurementsTab" class="tab-panel"><div class="decoded-toolbar"><label>Range <select id="measureRange"><option value="full">Full buffer</option><option value="visible">Visible</option><option value="cursors">A–B</option></select></label><span id="measureResolution"></span></div><div class="table-wrap"><table><thead><tr><th>Channel</th><th>Frequency</th><th>Period</th><th>Duty</th><th>High mean</th><th>Low mean</th><th>↑ / ↓</th><th>σ period</th></tr></thead><tbody id="measurementsBody"></tbody></table></div></div>
+        <div id="eventsTab" class="tab-panel"><div class="event-toolbar"><select id="logSeverity" aria-label="Log severity"><option value="all">All severities</option><option value="info">Info</option><option value="warning">Warning</option><option value="ok">OK</option><option value="error">Error</option></select><select id="logCategory" aria-label="Log type"><option value="all">All types</option><option value="protocol">Protocol</option><option value="acquisition">Acquisition</option><option value="system">System</option><option value="decoder">Decoder</option></select><input id="logSearch" type="search" placeholder="Search log" aria-label="Search log"><button id="exportLogBtn">Export</button><label><input id="autoScroll" type="checkbox" checked> Auto-scroll</label><button id="clearLogBtn">Clear</button></div><div id="eventLog" class="event-log"></div></div>
       </section>
     </section>
 
@@ -131,23 +147,25 @@
         <span>Frequency</span><b id="selectedFrequency">—</b><span>Period</span><b id="selectedPeriod">—</b>
         <span>Duty Cycle</span><b id="selectedDuty">—</b><span>High / Low</span><b id="selectedPulse">—</b>
       </div></details>
-      <details open><summary>⊕ Cursor Measurements</summary><div class="panel-content info-grid">
+      <details><summary>Pulse statistics</summary><pre id="pulseStats" class="panel-content"></pre></details><details><summary>USB integrity</summary><pre id="transportDetails" class="panel-content"></pre></details><details open><summary>⊕ Cursor Measurements</summary><div class="panel-content info-grid">
         <span>Cursor A</span><b id="rightCursorA">—</b><span>Cursor B</span><b id="rightCursorB">—</b>
         <span>Δt (B − A)</span><b id="rightDelta">—</b><span>1 / Δt</span><b id="rightDeltaFrequency">—</b>
       </div></details>
       <details open><summary>▥ Statistics</summary><div class="panel-content info-grid">
         <span>Capture Length</span><b id="captureLength">—</b><span>Total Samples</span><b id="totalSamples">—</b>
         <span>Sample Rate</span><b id="statSampleRate">—</b><span>Active Channels</span><b id="activeChannels">8 / 8</b>
-        <span>Data Size</span><b id="dataSize">—</b>
+        <span>Data Size</span><b id="dataSize">—</b><span>Visible span</span><b id="visibleRange">—</b>
       </div></details>
       <details open><summary>⌾ Trigger Summary</summary><div class="panel-content info-grid">
         <span>Mode</span><b id="triggerMode">Rising Edge</b><span>Source</span><b id="triggerSource">D0</b>
-        <span>Trigger Time</span><b id="triggerTime">—</b><span>Position</span><b id="triggerPosition">50%</b>
+        <span>Trigger Time</span><b id="triggerTime">—</b><span>Position</span><b id="triggerPosition">—</b><span>Pre / Post</span><b id="prePost">—</b>
       </div></details>
     </aside>
   </main>
 
-  <footer class="statusbar"><span id="footerStatus">Chưa kết nối — hãy kết nối STM32 USB CDC</span><span id="footerPointer">x: — · channel: —</span></footer>
-  <script src="app.js"></script>
+  <footer class="statusbar"><span id="footerStatus">Chưa kết nối — hãy kết nối STM32 USB CDC</span><span id="transportSummary"></span><span id="footerPointer">x: — · channel: —</span></footer>
+  <dialog id="channelDialog"><form id="channelForm"><h3 id="channelDialogTitle">Channel</h3><div class="form-grid"><label for="channelNameInput">Name</label><input id="channelNameInput" maxlength="32" required><label for="channelColorInput">Color</label><input id="channelColorInput" type="color"><label for="channelHeightInput">Height (px)</label><input id="channelHeightInput" type="number" min="24" max="120" required><label for="channelGroupInput">Group</label><input id="channelGroupInput" maxlength="24"></div><p>Kéo tên kênh ở sidebar để đổi thứ tự hiển thị.</p><button type="button" data-close="channelDialog">Cancel</button><button type="submit">Save channel</button></form></dialog>
+  <dialog id="exportDialog"><h3>Export retained data</h3><div class="export-grid"><button data-export="raw">Raw CSV</button><button data-export="decoded">Decoded CSV</button><button data-export="measurements">Measurements CSV</button><button data-export="vcd">VCD</button><button data-export="png">Waveform PNG</button></div><p>Save lưu session JSON gồm raw samples và cấu hình phân tích.</p><button data-close="exportDialog">Close</button></dialog>
+  <script src="analysis.js?v=2.0-workbench"></script><script src="app.js?v=2.0-workbench"></script><script src="workbench.js?v=2.0-workbench"></script>
 </body>
 </html>

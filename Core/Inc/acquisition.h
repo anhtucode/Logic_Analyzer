@@ -4,10 +4,18 @@
 #include "stm32f1xx_hal.h"
 #include <stdbool.h>
 #include <stdint.h>
+#include "lcd_mode.h"
 
 #define LA_MAX_SAMPLES          8192U
 #define LA_DMA_SAMPLES          2048U
 #define LA_STREAM_BLOCK_SAMPLES 1024U
+#define LA_STREAM_QUEUE_BLOCKS  8U
+
+/* Bit 0/1 giu tuong thich protocol cu; bit 2/3 chi ro nguyen nhan overrun. */
+#define LA_FLAG_OVERRUN          0x0001U
+#define LA_FLAG_DMA              0x0002U
+#define LA_FLAG_QUEUE_FULL       0x0004U
+#define LA_FLAG_DMA_LATE         0x0008U
 
 typedef enum
 {
@@ -82,6 +90,9 @@ bool LA_SetConfig(const LA_Config *config);
 void LA_GetConfig(LA_Config *config);
 void LA_GetStatus(LA_Status *status);
 bool LA_Start(void);
+/* LCD thu 4096 mau/500 kSa/s roi dung DMA de phat lai cham. */
+bool LA_StartLcdPlayback(void);
+LCD_Stream *LA_LcdWorkspace(void);
 void LA_Stop(void);
 uint16_t LA_ReadSamples(uint16_t offset, uint8_t *destination, uint16_t count);
 bool LA_GetStreamBlock(LA_StreamBlock *block);

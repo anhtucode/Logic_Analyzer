@@ -25,7 +25,7 @@
 #include "acquisition.h"
 #include "pc_interface.h"
 #include "self_test.h"
-#include "display_control.h"
+#include "lcd_mode.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -52,7 +52,8 @@ DMA_HandleTypeDef hdma_tim2_up;
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
-
+/* Lua chon PC/LCD duoc khoa tu luc boot toi lan reset tiep theo. */
+static bool lcd_mode;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -68,6 +69,27 @@ static void MX_USART1_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void AppMode_Init(void)
+{
+  GPIO_PinState previous = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_5);
+  uint32_t stable_since = HAL_GetTick();
+  /* Cho switch on dinh 20 ms; mode duoc khoa toi lan reset tiep theo. */
+  while ((HAL_GetTick() - stable_since) < 20U)
+  {
+    GPIO_PinState now = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_5);
+    if (now != previous)
+    {
+      previous = now;
+      stable_since = HAL_GetTick();
+    }
+  }
+  lcd_mode = (previous == GPIO_PIN_RESET);
+}
+
+bool AppMode_IsLcd(void)
+{
+  return lcd_mode;
+}
 
 /* USER CODE END 0 */
 
@@ -95,7 +117,7 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
+  /* GPIO duoc CubeMX khoi tao ben duoi, mode doc truoc khoi tao USB. */
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -107,9 +129,17 @@ int main(void)
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
   LA_Init(&htim2, &hdma_tim2_up);
-  PC_Init();
-  SelfTest_Init(&huart1, &hspi2);
-  // Display_Init(&hspi2);
+  if (AppMode_IsLcd())
+  {
+    Display_Init(&hspi2);
+  }
+  else
+  {
+    /* Khong chon LCD khi PC Self Test dung chung SPI2. */
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
+    PC_Init();
+    SelfTest_Init(&huart1, &hspi2);
+  }
 /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -120,9 +150,13 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
     LA_Task();
-    PC_Task();
-    SelfTest_Task();
-    // Display_Task();
+    if (AppMode_IsLcd())
+      Display_Task();
+    else
+    {
+      PC_Task();
+      SelfTest_Task();
+    }
   }
 /* USER CODE END 3 */
 }

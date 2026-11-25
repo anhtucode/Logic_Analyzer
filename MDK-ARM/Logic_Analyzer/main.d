@@ -28,5 +28,5 @@ logic_analyzer/main.o: ..\Core\Src\main.c ..\Core\Inc\main.h \
   ..\USB_DEVICE\App\usb_device.h \
   ..\Middlewares\ST\STM32_USB_Device_Library\Core\Inc\usbd_def.h \
   ..\USB_DEVICE\Target\usbd_conf.h ..\Core\Inc\acquisition.h \
-  ..\Core\Inc\pc_interface.h ..\Core\Inc\self_test.h \
-  ..\Core\Inc\display_control.h
+  ..\Core\Inc\lcd_mode.h ..\Core\Inc\pc_interface.h \
+  ..\Core\Inc\self_test.h
